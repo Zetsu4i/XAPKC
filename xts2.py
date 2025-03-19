@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import os
 import re
 import sys
 import time
@@ -10,8 +9,13 @@ import zipfile
 import tempfile
 import subprocess
 import argparse
-
+from colorama import init, Fore, Style
+import shutil
 import os
+
+# Initialize colorama
+init(autoreset=True)
+
 def sanitize_filename(filepath):
     """
     Sanitize the filename and rename the actual file.
@@ -155,6 +159,7 @@ def run_apk_mitm(apks_path):
     print("\nLaunching apk-mitm on the APKS file...\n")
     # Here we assume apk-mitm is in PATH; adjust command if needed.
     cmd = f"apk-mitm {shlex.quote(apks_path)}"
+    print(cmd)
     process = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     # Read and print output line by line (simulate apk-mitm UI)
     while True:
@@ -170,26 +175,19 @@ def print_help():
     """
     Display help message with available commands and usage.
     """
-    help_text = """
-Interactive XAPK Converter and apk-mitm Runner
+    help_text = f"""
+{Fore.CYAN}Interactive XAPK Converter and apk-mitm Runner{Style.RESET_ALL}
 
 This script can do the following:
   • Convert an XAPK file to a valid APKS file.
   • Convert an XAPK file to an APKS file and then run the apk-mitm command on it.
+  • Run apk-mitm directly on an existing APKS file.
   • It sanitizes filenames by replacing special characters with underscores (_).
 
-Usage:
-  - When run with no arguments, an interactive menu will appear.
-  - Options:
-       [Help]                  : Display this help message.
-       [Convert XAPK to APKS]  : Select an XAPK file and output a valid APKS file.
-       [Convert and Run apk-mitm] : Convert the XAPK, then run apk-mitm on the resulting APKS.
-
-Example:
+{Fore.GREEN}Example:{Style.RESET_ALL}
   $ python convert_xapk.py
   (then follow the interactive prompts)
-
-Alternatively, you can supply arguments:
+you can supply arguments:
   $ python convert_xapk.py <input_xapk_file> [<output_apks_file>]
     (This will simply convert the XAPK to APKS without running apk-mitm)
   $ python convert_xapk.py -mit <input_xapk_file> [<output_apks_file>]
@@ -199,6 +197,13 @@ Alternatively, you can supply arguments:
 """
     print(help_text)
 
+def check_apk_mitm():
+    """
+    Check if apk-mitm is installed and accessible in the system PATH.
+    """
+    return shutil.which("apk-mitm") is not None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Convert XAPK to APKS and optionally run apk-mitm", add_help=False)
     parser.add_argument("-h", "--help", action="store_true", help="Show help message and exit")
@@ -207,53 +212,15 @@ def main():
     parser.add_argument("output_apks", nargs="?", help="Path to the output APKS file")
     args = parser.parse_args()
 
+    if not check_apk_mitm():
+        print(f"{Fore.YELLOW}[WARNING]: apk-mitm is not installed or not in the system PATH. Some features may not work.{Style.RESET_ALL}")
+
     if args.help:
         print_help()
         return
 
     if not args.input_file:
-        # Interactive mode
-        while True:
-            # os.system('cls' if os.name == 'nt' else 'clear')
-            print("\nXAPK Converter and apk-mitm Runner")
-            print("1. Convert XAPK to APKS")
-            print("2. Convert XAPK to APKS and run apk-mitm")
-            print("3. Help")
-            print("4. Exit")
-            choice = input("Enter your choice (1-5): ")
-
-            if choice == '1':
-                xapk_path = input("Enter the path to the XAPK file: ")
-                output_apks = input("Enter the path for the output APKS file (or press Enter for default): ")
-                if not output_apks:
-                    output_apks = f"{os.path.splitext(xapk_path)[0]}.apks"
-                try:
-                    convert_xapk_to_apks(sanitize_filename(xapk_path), output_apks)
-                    print(f"\nConversion successful. Output file: {output_apks}")
-                except Exception as e:
-                    print(f"Error: {e}")
-            elif choice == '2':
-                xapk_path = input("Enter the path to the XAPK file: ")
-                output_apks = input("Enter the path for the output APKS file (or press Enter for default): ")
-                if not output_apks:
-                    output_apks = f"{os.path.splitext(xapk_path)[0]}.apks"
-                try:
-                    if xapk_path.lower().endswith('.apks'):
-                        print(f"\nRunning apk-mitm : {xapk_path}")
-                        run_apk_mitm(input_file)
-                    else:
-                        convert_xapk_to_apks(sanitize_filename(xapk_path), output_apks)
-                        print(f"\nConversion successful. Output file: {output_apks}")
-                        run_apk_mitm(output_apks)
-                except Exception as e:
-                    print(f"Error: {e}")
-            elif choice == '3':
-                print_help()
-            elif choice == '4':
-                print("Exiting...")
-                break
-            else:
-                print("Invalid choice. Please try again.")
+        print_help()
     else:
         # Command-line mode
         input_file = sanitize_filename(args.input_file)
@@ -261,18 +228,18 @@ def main():
             output_apks = args.output_apks or f"{os.path.splitext(input_file)[0]}.apks"
             try:
                 convert_xapk_to_apks(input_file, output_apks)
-                print(f"\nConversion successful. Output file: {output_apks}")
+                print(f"\n{Fore.GREEN}Conversion successful. Output file: {output_apks}{Style.RESET_ALL}")
                 if args.mit:
                     run_apk_mitm(output_apks)
             except Exception as e:
-                print(f"Error: {e}")
+                print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
         elif input_file.lower().endswith('.apks'):
             try:
                 run_apk_mitm(input_file)
             except Exception as e:
-                print(f"Error: {e}")
+                print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
         else:
-            print("Error: Input file must be either .xapk or .apks")
+            print(f"{Fore.RED}Error: Input file must be either .xapk or .apks{Style.RESET_ALL}")
 
 if __name__ == "__main__":
     main()
