@@ -25,12 +25,14 @@ out of curosity i wanted to explore the dark side of the android world, I spent 
 
 ## Usage 
 
-python xapk_converter.py [-mit] [input_file] [output_apks]
-
+```
+xapkc.py [-mit] [input_file] [output_apks]
+```
 For detailed usage instructions and examples, please refer to the script's help message by running:
 
-python xapk_converter.py
-
+```
+python xapkc.py
+```
 
 ## License
 
