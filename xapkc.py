@@ -189,20 +189,10 @@ def print_help():
     Display the help message with available commands and usage examples.
     """
     help_text = f"""
-{Fore.CYAN}(XAPC){Style.RESET_ALL}{Fore.LIGHTBLUE_EX}XAPK Converter{Style.RESET_ALL} v1.4.1
+{Fore.CYAN}(XAPC){Style.RESET_ALL}{Fore.LIGHTBLUE_EX}XAPK Converter{Style.RESET_ALL} v1.8.1
 BY {Fore.CYAN}Zetsu4i{Style.RESET_ALL},
 
-{Fore.YELLOW}Description:{Style.RESET_ALL}
-This script is designed to convert XAPK files to APKS format and optionally run the apk-mitm tool.
-  • Convert an XAPK file to a valid APKS file.
-  • Convert an XAPK file to APKS and then run the apk-mitm command.
-  • Run apk-mitm directly on an existing APKS file.
-  • Sanitize filenames by replacing special characters with underscores (_).
 
-{Fore.YELLOW}Requirements:{Style.RESET_ALL}
-  - Python 3.x
-  - colorama
-  - apk-mitm (optional)
 
 {Fore.YELLOW}HOW TO USE:{Style.RESET_ALL}
 {Fore.YELLOW}Commands:{Style.RESET_ALL}

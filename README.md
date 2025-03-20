@@ -26,9 +26,29 @@ This project was born out of the need to simplify and expedite the process of wo
 
 ## Usage 
 
+### Commands
+
+- `<input_xapk_file>`: Path to the input XAPK file.
+- `<output_apks_file>` (optional): Path for the output APKS file (should end with .apks).
+- `-mit`: Run apk-mitm after converting the XAPK to APKS.
+### Example
+
+1. Convert XAPK to APKS and run apk-mitm: 
 ```
-xapkc.py [-mit] [input_file] [output_apks]
+python xapkc.py -mit <input_xapk_file> [<output_apks_file>]
 ```
+
+2. Convert XAPK to APKS without running apk-mitm:
+```
+python xapkc.py <input_xapk_file> [<output_apks_file>]
+```
+
+3. Run apk-mitm directly on an existing APKS file:
+```
+python xapkc.py -mit <input_apks_file> (optional: <output_apks_file>)
+```
+`<input_apks_file> must be (apk,apks,xapk)`
+
 For detailed usage instructions and examples, please refer to the script's help message by running:
 
 ```
