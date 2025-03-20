@@ -43,7 +43,7 @@ python xapkc.py -mit <input_xapk_file> [<output_apks_file>]
 python xapkc.py <input_xapk_file> [<output_apks_file>]
 ```
 
-3. Run apk-mitm directly on an existing APKS file:
+3. Cleans the apk file name and run apk-mitm directly on an existing APKS file:
 ```
 python xapkc.py -mit <input_apks_file> (optional: <output_apks_file>)
 ```
