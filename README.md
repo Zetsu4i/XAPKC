@@ -14,8 +14,9 @@ Key features:
 
 ## Why I Created This Tool
 
-out of curosity i wanted to explore the dark side of the android world, I spent a considerable amount of time searching for a tool that could easily convert XAPK files to APKS format and integrate with APK-MITM. Unable to find a suitable solution, I decided to create this tool to make the process easier for myself and future adventurers in the Android security testing world.
+i wanted to try few things this morning, and I found myself facing a challenge: the lack of a streamlined tool for converting XAPK files to APKS format. XAPK files are commonly used in Android app development, but they are not directly compatible with some Android tools. This tool addresses this gap by providing a simple and efficient solution for converting XAPK files to APKS format.
 
+This project was born out of the need to simplify and expedite the process of working with XAPK files and conducting security analysis. By combining file conversion capabilities with APK-MITM integration, this tool aims to enhance productivity and facilitate more efficient Android application testing and research.
 
 ## Requirements
 
