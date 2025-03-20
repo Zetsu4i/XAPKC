@@ -189,21 +189,54 @@ def print_help():
     Display the help message with available commands and usage examples.
     """
     help_text = f"""
-{Fore.CYAN}Interactive XAPK Converter and apk-mitm Runner{Style.RESET_ALL}
+{Fore.CYAN}(XAPC){Style.RESET_ALL}{Fore.LIGHTBLUE_EX}XAPK Converter{Style.RESET_ALL} v1.4.1
+BY {Fore.CYAN}Zetsu4i{Style.RESET_ALL},
 
-This script can:
+{Fore.YELLOW}Description:{Style.RESET_ALL}
+This script is designed to convert XAPK files to APKS format and optionally run the apk-mitm tool.
   • Convert an XAPK file to a valid APKS file.
   • Convert an XAPK file to APKS and then run the apk-mitm command.
   • Run apk-mitm directly on an existing APKS file.
   • Sanitize filenames by replacing special characters with underscores (_).
 
-Usage examples:
-  {Fore.GREEN}$ python {os.path.basename(__file__)} <input_xapk_file> [<output_apks_file>]{Style.RESET_ALL}
+{Fore.YELLOW}Requirements:{Style.RESET_ALL}
+  - Python 3.x
+  - colorama
+  - apk-mitm (optional)
+
+{Fore.YELLOW}HOW TO USE:{Style.RESET_ALL}
+{Fore.YELLOW}Commands:{Style.RESET_ALL}
+  - <input_xapk_file>: Path to the input XAPK file.
+  - <output_apks_file> (optional): Path for the output APKS file (should end with .apks).
+  - -mit: Run apk-mitm after converting the XAPK to APKS.
+    
+{Fore.YELLOW}Usage examples:{Style.RESET_ALL}
+  {Fore.LIGHTMAGENTA_EX}$ python {os.path.basename(__file__)} -mit <input_xapk_file> [<output_apks_file>][OPTIONAL]{Style.RESET_ALL}
+  {Fore.GREEN}$ python {os.path.basename(__file__)} app.xapk app.apks{Style.RESET_ALL}
     (Converts XAPK to APKS without running apk-mitm)
-  {Fore.GREEN}$ python {os.path.basename(__file__)} -mit <input_xapk_file> [<output_apks_file>]{Style.RESET_ALL}
+  
+  {Fore.GREEN}$ python {os.path.basename(__file__)} -mit app.xapk{Style.RESET_ALL}
     (Converts XAPK to APKS and then runs apk-mitm)
+  
   {Fore.GREEN}$ python {os.path.basename(__file__)} <input_apks_file>{Style.RESET_ALL}
-    (Runs apk-mitm on an existing APKS file)
+    (Runs apk-mitm on an existing APK(apk,apks,xapk) file)
+
+{Fore.YELLOW}Notes:{Style.RESET_ALL}
+  - If you don't specify an output file name, the default is <input_xapk_file>.apks.
+  - If you provide an output file name, it should end with .apks.
+
+{Fore.YELLOW}License:{Style.RESET_ALL}
+This script is licensed under the MIT License, .
+
+{Fore.YELLOW}Disclaimer:{Style.RESET_ALL}
+{Fore.RED}This script is provided as-is, without any warranty. Use at your own risk.
+The author is not responsible for any misuse or damage caused by this script.
+Always ensure you have the necessary permissions before running any script.
+{Style.RESET_ALL}
+
+IF you need help create issue, visit: {Fore.LIGHTGREEN_EX}https://Github:github/Zitsu4i{Style.RESET_ALL}
+
+
 """
     print(help_text)
 
@@ -220,7 +253,10 @@ def main():
     parser.add_argument("input_file", nargs="?", help="Path to the input XAPK or APKS file")
     parser.add_argument("output_apks", nargs="?", help="Path to the output APKS file (if converting)")
     args = parser.parse_args()
-
+    if check_apk_mitm():
+        print(f"{Fore.GREEN}apk-mitm is installed and available in the system PATH.{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.RED}apk-mitm is not installed or not in the system PATH.{Style.RESET_ALL}")
     if args.help or not args.input_file:
         print_help()
         return
