@@ -1,5 +1,5 @@
 # XAPK Converter and APK-MITM Runner 
-##### (XAPC) in short for XAPK Converter.
+##### XAPK to APKS Converter.
 A powerful Python tool to convert XAPK files to APKS format and optionally run APK-MITM.
 
 ## Description
