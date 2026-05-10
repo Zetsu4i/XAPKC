@@ -51,8 +51,38 @@ def default_objection_output(source_path):
         return f"{base_name}.objection.apks"
     return f"{base_name}.objection.apk"
 
+def resolve_apksigner():
+    direct = shutil.which("apksigner")
+    if direct:
+        return direct
+
+    sdk_roots = [
+        os.environ.get("ANDROID_SDK_ROOT"),
+        os.environ.get("ANDROID_HOME"),
+        os.path.join(os.path.expanduser("~"), "AppData", "Local", "Android", "Sdk"),
+        os.path.join(os.path.expanduser("~"), "Android", "Sdk"),
+    ]
+    exe_names = ["apksigner.bat", "apksigner.cmd", "apksigner.exe", "apksigner"]
+
+    for sdk_root in sdk_roots:
+        if not sdk_root:
+            continue
+        build_tools = os.path.join(sdk_root, "build-tools")
+        if not os.path.isdir(build_tools):
+            continue
+        versions = sorted(os.listdir(build_tools), reverse=True)
+        for version in versions:
+            version_dir = os.path.join(build_tools, version)
+            if not os.path.isdir(version_dir):
+                continue
+            for exe in exe_names:
+                candidate = os.path.join(version_dir, exe)
+                if os.path.isfile(candidate):
+                    return candidate
+    return None
+
 def check_apksigner():
-    return shutil.which("apksigner") is not None
+    return resolve_apksigner() is not None
 
 def zip_directory(source_dir, output_zip_path):
     with zipfile.ZipFile(output_zip_path, "w", zipfile.ZIP_DEFLATED) as out_zip:
@@ -491,7 +521,8 @@ def resign_apk_files(apk_files, dry_run=False):
     if dry_run:
         ui_print("info", f"Dry-run: would re-sign {len(apk_files)} APK(s)")
         return True
-    if not check_apksigner():
+    apksigner_bin = resolve_apksigner()
+    if not apksigner_bin:
         ui_print("err", "apksigner is required to re-sign split APKs. Install Android SDK build-tools (example: sdkmanager \"build-tools;34.0.0\") and retry.")
         return False
 
@@ -503,7 +534,7 @@ def resign_apk_files(apk_files, dry_run=False):
 
     for apk_file in apk_files:
         cmd = [
-            "apksigner", "sign",
+            apksigner_bin, "sign",
             "--ks", keystore_path,
             "--ks-key-alias", "androiddebugkey",
             "--ks-pass", "pass:android",
@@ -642,6 +673,8 @@ def run_objection_patchapk(source_path, serial=None, arch=None, out_path=None, d
             ui_print("info", f"Running command: {' '.join(cmd)}")
             return_code = stream_command(cmd, label="objection")
             ui_print("info", f"objection finished with return code: {return_code}")
+            if return_code != 0:
+                raise RuntimeError(f"objection patchapk exited with code {return_code}")
             search_dirs = [os.getcwd(), os.path.dirname(actual_source)] + temp_dirs
             output_file = find_objection_output(search_dirs)
             if not output_file:
