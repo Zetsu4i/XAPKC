@@ -31,6 +31,8 @@ KNOWN_ABIS = {
     "riscv64",
     "universal",
 }
+STREAM_PREFIX = "      → "
+SPLIT_INSTALL_ERROR = "Split package requires APKS install-multiple. Ensure objection output is .apks."
 
 def detect_input_kind(path_value):
     lower = path_value.lower()
@@ -263,7 +265,7 @@ def stream_command(cmd, label, dry_run=False):
     for line in process.stdout:
         text = line.strip()
         if text:
-            print(f"      → {text}")
+            print(f"{STREAM_PREFIX}{text}")
     process.wait()
     return process.returncode
 
@@ -477,6 +479,7 @@ def resign_apk_files(apk_files, dry_run=False):
     if not os.path.exists(keystore_path):
         ui_print("err", f"debug.keystore not found at: {keystore_path}")
         return False
+    ui_print("warn", "Using bundled debug.keystore for re-signing (development/testing use).")
 
     for apk_file in apk_files:
         cmd = [
@@ -622,7 +625,9 @@ def run_objection_patchapk(source_path, serial=None, arch=None, out_path=None, d
             search_dirs = [os.getcwd(), os.path.dirname(actual_source)] + temp_dirs
             output_file = find_objection_output(search_dirs)
             if not output_file:
-                raise FileNotFoundError("Could not locate patched APK output from objection.")
+                raise FileNotFoundError(
+                    f"Could not locate patched APK output from objection. Searched in: {', '.join(search_dirs)}"
+                )
 
         def stage_sign():
             if not bundle_dir or bundle_kind != "apks":
@@ -750,7 +755,7 @@ def run_tui():
             install_source = state["objection_output"] or state["converted_apks"] or state["input_path"]
             input_is_split = state["input_kind"] in {"xapk", "apks"}
             if input_is_split and detect_input_kind(install_source) == "apk":
-                ui_print("err", "Split package requires APKS install-multiple. Use a patched .apks output.")
+                ui_print("err", "Split package detected but install source is a single APK. Run objection to generate a .apks bundle before installing.")
                 return
             install_apks_with_adb(install_source, serial=serial, dry_run=dry_run)
             artifacts.append(("adb_install_source", install_source))
@@ -837,7 +842,7 @@ def main():
                 install_apks_with_adb(objection_output, serial=args.adb_serial, dry_run=args.dry_run)
                 artifacts.append(("adb_install_source_after_obj", objection_output))
             elif args.adb and args.obj:
-                ui_print("err", "Split package requires APKS install-multiple. Ensure objection output is .apks.")
+                ui_print("err", SPLIT_INSTALL_ERROR)
             print_artifact_summary(input_file, artifacts)
         except Exception as e:
             ui_print("err", f"Error during conversion: {e}")
@@ -860,7 +865,7 @@ def main():
                 install_apks_with_adb(objection_output, serial=args.adb_serial, dry_run=args.dry_run)
                 artifacts.append(("adb_install_source_after_obj", objection_output))
             elif args.adb and args.obj:
-                ui_print("err", "Split package requires APKS install-multiple. Ensure objection output is .apks.")
+                ui_print("err", SPLIT_INSTALL_ERROR)
             if not args.mit and not args.adb and not args.obj:
                 ui_print("warn", "No action specified for .apks file. Use -mit, -adb, or -obj.")
             print_artifact_summary(input_file, artifacts)
