@@ -775,21 +775,19 @@ def run_tui():
         def adb_stage():
             install_source = state["objection_output"] or state["converted_apks"] or state["input_path"]
             if not can_install_split_source(state["input_kind"], install_source):
-                return
+                raise RuntimeError(SPLIT_INSTALL_ERROR)
             install_apks_with_adb(install_source, serial=serial, dry_run=dry_run)
             artifacts.append(("adb_install_source", install_source))
         stages.append(("Install APK/APKS", adb_stage))
     if "obj" in selected:
         def obj_stage():
             obj_source = state["converted_apks"] or state["input_path"]
-            if not obj_out:
-                target_output = default_objection_output(obj_source)
-            else:
-                target_output = obj_out
+            target_output = obj_out or default_objection_output(obj_source)
             result = run_objection_patchapk(obj_source, serial=serial, arch=obj_arch or None, out_path=target_output, dry_run=dry_run)
-            if result:
-                state["objection_output"] = result
-                artifacts.append(("objection_output", result))
+            if not result:
+                raise RuntimeError("objection patchapk failed.")
+            state["objection_output"] = result
+            artifacts.append(("objection_output", result))
         stages.append(("Run objection patchapk", obj_stage))
 
     run_stages(stages)
