@@ -827,7 +827,10 @@ def main():
         print_help()
         return
     if args.tui or not args.input_file:
-        run_tui()
+        try:
+            run_tui()
+        except Exception as e:
+            ui_print("err", f"Error: {e}")
         return
 
     input_file = sanitize_filename(args.input_file, dry_run=args.dry_run)

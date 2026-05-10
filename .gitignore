@@ -3,3 +3,5 @@
 *.apks
 *.xapk
 *.keystore
+__pycache__/
+*.pyc
