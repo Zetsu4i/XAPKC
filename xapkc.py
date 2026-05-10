@@ -830,7 +830,7 @@ def main():
         try:
             run_tui()
         except Exception as e:
-            ui_print("err", f"TUI failed: {type(e).__name__}: {e}")
+            ui_print("err", f"TUI failed ({type(e).__name__}): {e}")
         return
 
     input_file = sanitize_filename(args.input_file, dry_run=args.dry_run)
