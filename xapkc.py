@@ -31,7 +31,7 @@ KNOWN_ABIS = {
     "riscv64",
     "universal",
 }
-STREAM_PREFIX = "      → "
+COMMAND_OUTPUT_PREFIX = "      → "
 SPLIT_INSTALL_ERROR = "Split package requires APKS install-multiple. Ensure objection output is .apks."
 
 def detect_input_kind(path_value):
@@ -68,9 +68,16 @@ def run_stages(stages):
         try:
             func()
             print(f"  √ {label}")
-        except Exception:
+        except Exception as e:
+            ui_print("err", f"{label} failed: {e}")
             print(f"  x {label}")
             raise
+
+def can_install_split_source(input_kind, install_source):
+    if input_kind in {"xapk", "apks"} and detect_input_kind(install_source) == "apk":
+        ui_print("err", SPLIT_INSTALL_ERROR)
+        return False
+    return True
 
 def print_artifact_summary(input_path, artifacts):
     ui_print("info", f"Resolved input: {input_path}")
@@ -265,7 +272,7 @@ def stream_command(cmd, label, dry_run=False):
     for line in process.stdout:
         text = line.strip()
         if text:
-            print(f"{STREAM_PREFIX}{text}")
+            print(f"{COMMAND_OUTPUT_PREFIX}{text}")
     process.wait()
     return process.returncode
 
@@ -472,7 +479,7 @@ def resign_apk_files(apk_files, dry_run=False):
         ui_print("info", f"Dry-run: would re-sign {len(apk_files)} APK(s)")
         return True
     if not check_apksigner():
-        ui_print("err", "apksigner is required to re-sign split APKs. Install Android build-tools and retry.")
+        ui_print("err", "apksigner is required to re-sign split APKs. Install Android SDK build-tools (sdkmanager \"build-tools;<version>\") and retry.")
         return False
 
     keystore_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug.keystore")
@@ -625,8 +632,9 @@ def run_objection_patchapk(source_path, serial=None, arch=None, out_path=None, d
             search_dirs = [os.getcwd(), os.path.dirname(actual_source)] + temp_dirs
             output_file = find_objection_output(search_dirs)
             if not output_file:
+                preview_dirs = ", ".join(search_dirs[:2]) + (", ..." if len(search_dirs) > 2 else "")
                 raise FileNotFoundError(
-                    f"Could not locate patched APK output from objection. Searched in: {', '.join(search_dirs)}"
+                    f"Could not locate patched APK output from objection. Checked: {preview_dirs}"
                 )
 
         def stage_sign():
@@ -753,9 +761,7 @@ def run_tui():
     if "adb" in selected:
         def adb_stage():
             install_source = state["objection_output"] or state["converted_apks"] or state["input_path"]
-            input_is_split = state["input_kind"] in {"xapk", "apks"}
-            if input_is_split and detect_input_kind(install_source) == "apk":
-                ui_print("err", "Split package detected but install source is a single APK. Run objection to generate a .apks bundle before installing.")
+            if not can_install_split_source(state["input_kind"], install_source):
                 return
             install_apks_with_adb(install_source, serial=serial, dry_run=dry_run)
             artifacts.append(("adb_install_source", install_source))
@@ -773,7 +779,6 @@ def run_tui():
                 artifacts.append(("objection_output", result))
         stages.append(("Run objection patchapk", obj_stage))
 
-    print_artifact_summary(state["input_path"], [])
     run_stages(stages)
     print_artifact_summary(state["input_path"], artifacts)
 
@@ -838,11 +843,12 @@ def main():
                 objection_output = run_objection_patchapk(output_apks, serial=args.adb_serial, arch=args.obj_arch, out_path=desired_output, dry_run=args.dry_run)
                 if objection_output:
                     artifacts.append(("objection_output", objection_output))
-            if args.adb and objection_output and detect_input_kind(objection_output) == "apks":
-                install_apks_with_adb(objection_output, serial=args.adb_serial, dry_run=args.dry_run)
-                artifacts.append(("adb_install_source_after_obj", objection_output))
-            elif args.adb and args.obj:
-                ui_print("err", SPLIT_INSTALL_ERROR)
+            if args.adb and args.obj:
+                if not objection_output:
+                    ui_print("err", "No objection output available for installation.")
+                elif can_install_split_source(input_kind, objection_output):
+                    install_apks_with_adb(objection_output, serial=args.adb_serial, dry_run=args.dry_run)
+                    artifacts.append(("adb_install_source_after_obj", objection_output))
             print_artifact_summary(input_file, artifacts)
         except Exception as e:
             ui_print("err", f"Error during conversion: {e}")
@@ -861,11 +867,12 @@ def main():
                 objection_output = run_objection_patchapk(input_file, serial=args.adb_serial, arch=args.obj_arch, out_path=desired_output, dry_run=args.dry_run)
                 if objection_output:
                     artifacts.append(("objection_output", objection_output))
-            if args.adb and objection_output and detect_input_kind(objection_output) == "apks":
-                install_apks_with_adb(objection_output, serial=args.adb_serial, dry_run=args.dry_run)
-                artifacts.append(("adb_install_source_after_obj", objection_output))
-            elif args.adb and args.obj:
-                ui_print("err", SPLIT_INSTALL_ERROR)
+            if args.adb and args.obj:
+                if not objection_output:
+                    ui_print("err", "No objection output available for installation.")
+                elif can_install_split_source(input_kind, objection_output):
+                    install_apks_with_adb(objection_output, serial=args.adb_serial, dry_run=args.dry_run)
+                    artifacts.append(("adb_install_source_after_obj", objection_output))
             if not args.mit and not args.adb and not args.obj:
                 ui_print("warn", "No action specified for .apks file. Use -mit, -adb, or -obj.")
             print_artifact_summary(input_file, artifacts)
