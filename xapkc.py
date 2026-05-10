@@ -32,6 +32,52 @@ KNOWN_ABIS = {
     "universal",
 }
 
+def detect_input_kind(path_value):
+    lower = path_value.lower()
+    if lower.endswith(".xapk"):
+        return "xapk"
+    if lower.endswith(".apks"):
+        return "apks"
+    if lower.endswith(".apk"):
+        return "apk"
+    return "unknown"
+
+def default_objection_output(source_path):
+    kind = detect_input_kind(source_path)
+    base_name = os.path.splitext(source_path)[0]
+    if kind in {"apks", "xapk"}:
+        return f"{base_name}.objection.apks"
+    return f"{base_name}.objection.apk"
+
+def check_apksigner():
+    return shutil.which("apksigner") is not None
+
+def zip_directory(source_dir, output_zip_path):
+    with zipfile.ZipFile(output_zip_path, "w", zipfile.ZIP_DEFLATED) as out_zip:
+        for root, _, files in os.walk(source_dir):
+            for file_name in files:
+                file_path = os.path.join(root, file_name)
+                arcname = os.path.relpath(file_path, source_dir)
+                out_zip.write(file_path, arcname)
+
+def run_stages(stages):
+    for label, func in stages:
+        print(f"  > {label}")
+        try:
+            func()
+            print(f"  √ {label}")
+        except Exception:
+            print(f"  x {label}")
+            raise
+
+def print_artifact_summary(input_path, artifacts):
+    ui_print("info", f"Resolved input: {input_path}")
+    if not artifacts:
+        return
+    ui_print("info", "Artifacts:")
+    for name, value in artifacts:
+        ui_print("info", f"  - {name}: {value}")
+
 def ui_print(level, message):
     prefixes = {
         "info": "[*]",
@@ -214,18 +260,11 @@ def stream_command(cmd, label, dry_run=False):
         ui_print("err", f"Failed to start {label}: {e}")
         return 1
 
-    last_line = ""
     for line in process.stdout:
         text = line.strip()
-        if not text:
-            continue
-        last_line = text
-        dim_line = f"{Style.DIM}{label}: {text}{Style.RESET_ALL}"
-        sys.stdout.write("\r" + dim_line + " " * 10)
-        sys.stdout.flush()
+        if text:
+            print(f"      → {text}")
     process.wait()
-    if last_line:
-        sys.stdout.write("\n")
     return process.returncode
 
 def print_help():
@@ -424,6 +463,38 @@ def find_objection_output(search_dirs):
         return None
     return max(candidates, key=os.path.getmtime)
 
+def resign_apk_files(apk_files, dry_run=False):
+    if not apk_files:
+        return True
+    if dry_run:
+        ui_print("info", f"Dry-run: would re-sign {len(apk_files)} APK(s)")
+        return True
+    if not check_apksigner():
+        ui_print("err", "apksigner is required to re-sign split APKs. Install Android build-tools and retry.")
+        return False
+
+    keystore_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug.keystore")
+    if not os.path.exists(keystore_path):
+        ui_print("err", f"debug.keystore not found at: {keystore_path}")
+        return False
+
+    for apk_file in apk_files:
+        cmd = [
+            "apksigner", "sign",
+            "--ks", keystore_path,
+            "--ks-key-alias", "androiddebugkey",
+            "--ks-pass", "pass:android",
+            "--key-pass", "pass:android",
+            "--v1-signing-enabled", "true",
+            "--v2-signing-enabled", "true",
+            apk_file
+        ]
+        rc = stream_command(cmd, label="apksigner")
+        if rc != 0:
+            ui_print("err", f"Failed to sign APK: {apk_file}")
+            return False
+    return True
+
 def install_apks_with_adb(package_path, serial=None, dry_run=False):
     """
     Install an APK or APKS bundle using adb.
@@ -492,33 +563,39 @@ def install_apks_with_adb(package_path, serial=None, dry_run=False):
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 def run_objection_patchapk(source_path, serial=None, arch=None, out_path=None, dry_run=False):
+    source_kind = detect_input_kind(source_path)
     if not out_path:
-        base_name = os.path.splitext(source_path)[0]
-        out_path = f"{base_name}.objection.apk"
+        out_path = default_objection_output(source_path)
     if dry_run:
         ui_print("info", f"Dry-run: would run objection patchapk on {source_path}")
         ui_print("info", f"Dry-run: would write output to {out_path}")
-        return
+        return out_path
     if not check_objection():
         ui_print("err", "objection is not installed or not in the system PATH.")
-        return
+        return None
 
     temp_dirs = []
     actual_source = source_path
+    bundle_dir = None
+    bundle_kind = source_kind
+    output_file = None
 
     try:
-        if source_path.lower().endswith(".xapk"):
-            temp_dir = tempfile.mkdtemp(prefix="xapk_to_apks_")
-            temp_apks = os.path.join(temp_dir, "converted.apks")
-            temp_dirs.append(temp_dir)
-            convert_xapk_to_apks(source_path, temp_apks, dry_run=False)
-            actual_source = temp_apks
-
-        if actual_source.lower().endswith(".apks"):
-            temp_dir, base_apk = extract_apks_to_temp(actual_source)
-            temp_dirs.append(temp_dir)
-            actual_source = base_apk
-            ui_print("info", f"Using base APK: {actual_source}")
+        def stage_extract():
+            nonlocal actual_source, bundle_dir, bundle_kind
+            if source_kind == "xapk":
+                temp_dir = tempfile.mkdtemp(prefix="xapk_to_apks_")
+                temp_apks = os.path.join(temp_dir, "converted.apks")
+                temp_dirs.append(temp_dir)
+                convert_xapk_to_apks(source_path, temp_apks, dry_run=False)
+                actual_source = temp_apks
+                bundle_kind = "apks"
+            if detect_input_kind(actual_source) == "apks":
+                temp_dir, base_apk = extract_apks_to_temp(actual_source)
+                temp_dirs.append(temp_dir)
+                bundle_dir = temp_dir
+                actual_source = base_apk
+                ui_print("info", f"Using base APK: {actual_source}")
 
         if not arch:
             if check_adb():
@@ -534,27 +611,64 @@ def run_objection_patchapk(source_path, serial=None, arch=None, out_path=None, d
             else:
                 ui_print("warn", "adb not found; running objection without --architecture.")
 
-        cmd = ["objection", "patchapk", "-s", actual_source]
-        if arch:
-            cmd.extend(["-a", arch])
+        def stage_patch():
+            nonlocal output_file
+            cmd = ["objection", "patchapk", "-s", actual_source]
+            if arch:
+                cmd.extend(["-a", arch])
+            ui_print("info", f"Running command: {' '.join(cmd)}")
+            return_code = stream_command(cmd, label="objection")
+            ui_print("info", f"objection finished with return code: {return_code}")
+            search_dirs = [os.getcwd(), os.path.dirname(actual_source)] + temp_dirs
+            output_file = find_objection_output(search_dirs)
+            if not output_file:
+                raise FileNotFoundError("Could not locate patched APK output from objection.")
 
-        ui_print("step", "Launching objection patchapk...")
-        ui_print("info", f"Running command: {' '.join(cmd)}")
-        return_code = stream_command(cmd, label="objection")
-        ui_print("info", f"objection finished with return code: {return_code}")
-        search_dirs = [os.getcwd(), os.path.dirname(actual_source)] + temp_dirs
-        output_file = find_objection_output(search_dirs)
-        if not output_file:
-            ui_print("warn", "Could not locate patched APK output from objection.")
-            return
+        def stage_sign():
+            if not bundle_dir or bundle_kind != "apks":
+                return
+            shutil.copy2(output_file, actual_source)
+            apk_files = []
+            for root, _, files in os.walk(bundle_dir):
+                for name in files:
+                    if name.endswith(".apk"):
+                        apk_files.append(os.path.join(root, name))
+            if not resign_apk_files(apk_files, dry_run=dry_run):
+                raise RuntimeError("Failed to re-sign split APKs.")
+
+        def stage_compress():
+            if not bundle_dir or bundle_kind != "apks":
+                return
+            out_dir = os.path.dirname(out_path)
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
+            zip_directory(bundle_dir, out_path)
+            ui_print("ok", f"Patched APKS saved to: {out_path}")
+
+        stages = []
+        if source_kind in {"xapk", "apks"}:
+            stages.append(("Extracting APKs", stage_extract))
+            stages.append(("Patching base APK", stage_patch))
+            stages.append(("Signing APKs", stage_sign))
+            stages.append(("Compressing APKs", stage_compress))
+        else:
+            stages.append(("Patching APK", stage_patch))
+
+        run_stages(stages)
+
+        if bundle_dir and bundle_kind == "apks":
+            return out_path
+
         if output_file != out_path:
             out_dir = os.path.dirname(out_path)
             if out_dir:
                 os.makedirs(out_dir, exist_ok=True)
             shutil.copy2(output_file, out_path)
         ui_print("ok", f"Patched APK saved to: {out_path}")
+        return out_path
     except Exception as e:
         ui_print("err", f"Failed to run objection: {e}")
+        return None
     finally:
         for temp_dir in temp_dirs:
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -569,10 +683,8 @@ def run_tui():
     if not input_file:
         return
     input_file = input_file.strip('"')
-    is_xapk = input_file.lower().endswith(".xapk")
-    is_apks = input_file.lower().endswith(".apks")
-    is_apk = input_file.lower().endswith(".apk")
-    if not (is_xapk or is_apks or is_apk):
+    input_kind = detect_input_kind(input_file)
+    if input_kind == "unknown":
         ui_print("err", "Input file must be .xapk, .apks, or .apk")
         return
 
@@ -605,35 +717,60 @@ def run_tui():
         obj_out = questionary.text("Objection output path (blank for default):").ask().strip()
 
     input_file = sanitize_filename(input_file, dry_run=dry_run)
+    artifacts = []
+    state = {
+        "input_path": input_file,
+        "input_kind": input_kind,
+        "converted_apks": None,
+        "objection_output": None,
+    }
+    stages = []
 
-    steps = []
-    needs_convert = is_xapk and ("convert" in selected or (selected & {"mit", "adb", "obj"}))
-    if is_xapk and needs_convert:
+    needs_convert = input_kind == "xapk" and ("convert" in selected or (selected & {"mit", "adb", "obj"}))
+    if "convert" in selected and input_kind != "xapk":
+        ui_print("warn", "Convert is only valid for .xapk inputs.")
+    if needs_convert:
         output_apks = questionary.text("Output APKS (leave blank for default):").ask().strip()
         if not output_apks:
             output_apks = f"{os.path.splitext(input_file)[0]}.apks"
-        steps.append(("Convert XAPK to APKS", lambda: convert_xapk_to_apks(input_file, output_apks, dry_run=dry_run)))
-    elif "convert" in selected and not is_xapk:
-        ui_print("warn", "Convert is only valid for .xapk inputs.")
+        def convert_stage():
+            convert_xapk_to_apks(state["input_path"], output_apks, dry_run=dry_run)
+            state["converted_apks"] = output_apks
+            artifacts.append(("converted_apks", output_apks))
+        stages.append(("Convert XAPK to APKS", convert_stage))
 
     if "mit" in selected:
-        if is_xapk and needs_convert:
-            steps.append(("Run apk-mitm", lambda: run_apk_mitm(output_apks, dry_run=dry_run)))
-        else:
-            steps.append(("Run apk-mitm", lambda: run_apk_mitm(input_file, dry_run=dry_run)))
+        def mit_stage():
+            mit_source = state["converted_apks"] or state["input_path"]
+            run_apk_mitm(mit_source, dry_run=dry_run)
+            artifacts.append(("apk_mitm_source", mit_source))
+        stages.append(("Run apk-mitm", mit_stage))
     if "adb" in selected:
-        if is_xapk and needs_convert:
-            target_apks = output_apks
-            steps.append(("Install APK/APKS", lambda: install_apks_with_adb(target_apks, serial=serial, dry_run=dry_run)))
-        else:
-            steps.append(("Install APK/APKS", lambda: install_apks_with_adb(input_file, serial=serial, dry_run=dry_run)))
+        def adb_stage():
+            install_source = state["objection_output"] or state["converted_apks"] or state["input_path"]
+            input_is_split = state["input_kind"] in {"xapk", "apks"}
+            if input_is_split and detect_input_kind(install_source) == "apk":
+                ui_print("err", "Split package requires APKS install-multiple. Use a patched .apks output.")
+                return
+            install_apks_with_adb(install_source, serial=serial, dry_run=dry_run)
+            artifacts.append(("adb_install_source", install_source))
+        stages.append(("Install APK/APKS", adb_stage))
     if "obj" in selected:
-        obj_source = output_apks if (is_xapk and needs_convert) else input_file
-        steps.append(("Run objection patchapk", lambda: run_objection_patchapk(obj_source, serial=serial, arch=obj_arch or None, out_path=obj_out or None, dry_run=dry_run)))
+        def obj_stage():
+            obj_source = state["converted_apks"] or state["input_path"]
+            if not obj_out:
+                target_output = default_objection_output(obj_source)
+            else:
+                target_output = obj_out
+            result = run_objection_patchapk(obj_source, serial=serial, arch=obj_arch or None, out_path=target_output, dry_run=dry_run)
+            if result:
+                state["objection_output"] = result
+                artifacts.append(("objection_output", result))
+        stages.append(("Run objection patchapk", obj_stage))
 
-    for label, func in steps:
-        ui_print("step", label)
-        func()
+    print_artifact_summary(state["input_path"], [])
+    run_stages(stages)
+    print_artifact_summary(state["input_path"], artifacts)
 
 def select_input_file():
     if not HAS_TUI:
@@ -674,41 +811,80 @@ def main():
 
     input_file = sanitize_filename(args.input_file, dry_run=args.dry_run)
 
-    if input_file.lower().endswith('.xapk'):
+    input_kind = detect_input_kind(input_file)
+    artifacts = []
+
+    if input_kind == "xapk":
         output_apks = args.output_apks or f"{os.path.splitext(input_file)[0]}.apks"
         try:
+            print_artifact_summary(input_file, [])
             convert_xapk_to_apks(input_file, output_apks, dry_run=args.dry_run)
+            artifacts.append(("converted_apks", output_apks))
             ui_print("ok", f"Conversion successful. Output file: {output_apks}")
             if args.mit:
                 run_apk_mitm(output_apks, dry_run=args.dry_run)
-            if args.adb:
+                artifacts.append(("apk_mitm_source", output_apks))
+            objection_output = None
+            if args.adb and not args.obj:
                 install_apks_with_adb(output_apks, serial=args.adb_serial, dry_run=args.dry_run)
+                artifacts.append(("adb_install_source", output_apks))
             if args.obj:
-                run_objection_patchapk(output_apks, serial=args.adb_serial, arch=args.obj_arch, out_path=args.obj_out, dry_run=args.dry_run)
+                desired_output = args.obj_out or default_objection_output(output_apks)
+                objection_output = run_objection_patchapk(output_apks, serial=args.adb_serial, arch=args.obj_arch, out_path=desired_output, dry_run=args.dry_run)
+                if objection_output:
+                    artifacts.append(("objection_output", objection_output))
+            if args.adb and objection_output and detect_input_kind(objection_output) == "apks":
+                install_apks_with_adb(objection_output, serial=args.adb_serial, dry_run=args.dry_run)
+                artifacts.append(("adb_install_source_after_obj", objection_output))
+            elif args.adb and args.obj:
+                ui_print("err", "Split package requires APKS install-multiple. Ensure objection output is .apks.")
+            print_artifact_summary(input_file, artifacts)
         except Exception as e:
             ui_print("err", f"Error during conversion: {e}")
-    elif input_file.lower().endswith('.apks'):
+    elif input_kind == "apks":
         try:
+            print_artifact_summary(input_file, [])
             if args.mit:
                 run_apk_mitm(input_file, dry_run=args.dry_run)
-            if args.adb:
+                artifacts.append(("apk_mitm_source", input_file))
+            objection_output = None
+            if args.adb and not args.obj:
                 install_apks_with_adb(input_file, serial=args.adb_serial, dry_run=args.dry_run)
+                artifacts.append(("adb_install_source", input_file))
             if args.obj:
-                run_objection_patchapk(input_file, serial=args.adb_serial, arch=args.obj_arch, out_path=args.obj_out, dry_run=args.dry_run)
+                desired_output = args.obj_out or default_objection_output(input_file)
+                objection_output = run_objection_patchapk(input_file, serial=args.adb_serial, arch=args.obj_arch, out_path=desired_output, dry_run=args.dry_run)
+                if objection_output:
+                    artifacts.append(("objection_output", objection_output))
+            if args.adb and objection_output and detect_input_kind(objection_output) == "apks":
+                install_apks_with_adb(objection_output, serial=args.adb_serial, dry_run=args.dry_run)
+                artifacts.append(("adb_install_source_after_obj", objection_output))
+            elif args.adb and args.obj:
+                ui_print("err", "Split package requires APKS install-multiple. Ensure objection output is .apks.")
             if not args.mit and not args.adb and not args.obj:
                 ui_print("warn", "No action specified for .apks file. Use -mit, -adb, or -obj.")
+            print_artifact_summary(input_file, artifacts)
         except Exception as e:
             ui_print("err", f"Error: {e}")
-    elif input_file.lower().endswith('.apk'):
+    elif input_kind == "apk":
         try:
+            print_artifact_summary(input_file, [])
             if args.mit:
                 run_apk_mitm(input_file, dry_run=args.dry_run)
+                artifacts.append(("apk_mitm_source", input_file))
+            objection_output = None
             if args.obj:
-                run_objection_patchapk(input_file, serial=args.adb_serial, arch=args.obj_arch, out_path=args.obj_out, dry_run=args.dry_run)
+                desired_output = args.obj_out or default_objection_output(input_file)
+                objection_output = run_objection_patchapk(input_file, serial=args.adb_serial, arch=args.obj_arch, out_path=desired_output, dry_run=args.dry_run)
+                if objection_output:
+                    artifacts.append(("objection_output", objection_output))
             if args.adb:
-                install_apks_with_adb(input_file, serial=args.adb_serial, dry_run=args.dry_run)
+                install_target = objection_output or input_file
+                install_apks_with_adb(install_target, serial=args.adb_serial, dry_run=args.dry_run)
+                artifacts.append(("adb_install_source", install_target))
             if not args.mit and not args.obj and not args.adb:
                 ui_print("warn", "No action specified for .apk file. Use -mit or -obj.")
+            print_artifact_summary(input_file, artifacts)
         except Exception as e:
             ui_print("err", f"Error: {e}")
     else:
