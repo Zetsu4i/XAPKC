@@ -269,11 +269,24 @@ def stream_command(cmd, label, dry_run=False):
         ui_print("err", f"Failed to start {label}: {e}")
         return 1
 
+    term_width = shutil.get_terminal_size((120, 20)).columns
+    single_line_width = max(20, term_width - 1)
+    last_render = ""
+
     for line in process.stdout:
         text = line.strip()
-        if text:
-            print(f"{COMMAND_OUTPUT_PREFIX}{text}")
+        if not text:
+            continue
+        rendered = f"{COMMAND_OUTPUT_PREFIX}{text}"
+        if len(rendered) > single_line_width:
+            rendered = rendered[:single_line_width - 1] + "…"
+        last_render = rendered
+        sys.stdout.write("\r" + rendered.ljust(single_line_width))
+        sys.stdout.flush()
     process.wait()
+    if last_render:
+        sys.stdout.write("\r" + (" " * single_line_width) + "\r")
+        sys.stdout.flush()
     return process.returncode
 
 def print_help():
