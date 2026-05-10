@@ -830,7 +830,7 @@ def main():
         try:
             run_tui()
         except Exception as e:
-            ui_print("err", f"Error: {e}")
+            ui_print("err", f"TUI error: {e}")
         return
 
     input_file = sanitize_filename(args.input_file, dry_run=args.dry_run)
