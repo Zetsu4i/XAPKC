@@ -492,7 +492,7 @@ def resign_apk_files(apk_files, dry_run=False):
         ui_print("info", f"Dry-run: would re-sign {len(apk_files)} APK(s)")
         return True
     if not check_apksigner():
-        ui_print("err", "apksigner is required to re-sign split APKs. Install Android SDK build-tools (sdkmanager \"build-tools;<version>\") and retry.")
+        ui_print("err", "apksigner is required to re-sign split APKs. Install Android SDK build-tools (example: sdkmanager \"build-tools;34.0.0\") and retry.")
         return False
 
     keystore_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug.keystore")
